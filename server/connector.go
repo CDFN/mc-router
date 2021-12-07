@@ -31,18 +31,21 @@ type ConnectorMetrics struct {
 	ActiveConnections metrics.Gauge
 }
 
-func NewConnector(metrics *ConnectorMetrics, sendProxyProto bool) Connector {
+func NewConnector(metrics *ConnectorMetrics, sendProxyProto bool, forwardIp bool) Connector {
 
 	return &connectorImpl{
 		metrics:        metrics,
 		sendProxyProto: sendProxyProto,
+		forwardIp:      forwardIp,
 	}
 }
 
 type connectorImpl struct {
-	state          mcproto.State
-	metrics        *ConnectorMetrics
-	sendProxyProto bool
+	state             mcproto.State
+	metrics           *ConnectorMetrics
+	sendProxyProto    bool
+	forwardIp         bool
+	originalHandshake mcproto.Handshake
 }
 
 func (c *connectorImpl) StartAcceptingConnections(ctx context.Context, listenAddress string, connRateLimit int) error {
@@ -118,20 +121,49 @@ func (c *connectorImpl) HandleConnection(ctx context.Context, frontendConn net.C
 		Debug("Got packet")
 
 	if packet.PacketID == mcproto.PacketIdHandshake {
-		handshake, err := mcproto.ReadHandshake(packet.Data)
-		if err != nil {
-			logrus.WithError(err).WithField("clientAddr", clientAddr).
-				Error("Failed to read handshake")
-			c.metrics.Errors.With("type", "read").Add(1)
+		if c.state == mcproto.StateHandshaking {
+			handshake, err := mcproto.ReadHandshake(packet.Data)
+			if err != nil {
+				logrus.WithError(err).WithField("clientAddr", clientAddr).
+					Error("Failed to read handshake")
+				c.metrics.Errors.With("type", "read").Add(1)
+				return
+			}
+
+			c.originalHandshake = *handshake
+			if handshake.NextState == 2 {
+				c.state = mcproto.StateLogin
+				logrus.
+					WithField("client", clientAddr).
+					WithField("handshake", handshake).
+					Debug("Got handshake with next state of login")
+				return
+			}
+			logrus.
+				WithField("client", clientAddr).
+				WithField("handshake", handshake).
+				Debug("Got handshake with next state status")
+		}
+
+		if c.state == mcproto.StateLogin {
+			loginStart, err := mcproto.ReadLoginStart(packet.Data)
+			if err != nil {
+				logrus.
+					WithError(err).
+					WithField("clientAddr", clientAddr).
+					Error("Failed to read login start")
+
+				c.metrics.Errors.With("type", "read").Add(1)
+				return
+			}
+			logrus.
+				WithField("client", clientAddr).
+				WithField("loginStart", loginStart).
+				Debug("Got login start")
 			return
 		}
 
-		logrus.
-			WithField("client", clientAddr).
-			WithField("handshake", handshake).
-			Debug("Got handshake")
-
-		serverAddress := handshake.ServerAddress
+		serverAddress := c.originalHandshake.ServerAddress
 
 		c.findAndConnectBackend(ctx, frontendConn, clientAddr, inspectionBuffer, serverAddress)
 	} else if packet.PacketID == mcproto.PacketIdLegacyServerListPing {

@@ -1,6 +1,9 @@
 package mcproto
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/google/uuid"
+)
 
 type Frame struct {
 	Length  int
@@ -11,6 +14,7 @@ type State int
 
 const (
 	StateHandshaking = iota
+	StateLogin       = iota
 )
 
 var trimLimit = 64
@@ -54,6 +58,30 @@ type Handshake struct {
 	ServerAddress   string
 	ServerPort      uint16
 	NextState       int
+}
+
+type LoginStart struct {
+	Name string
+}
+
+type EncryptionRequest struct {
+	ServerID    string
+	PubKeyLen   int
+	PubKey      []byte
+	VerTokenLen int
+	VerToken    []byte
+}
+
+type EncryptionResponse struct {
+	SharedSecretLen int
+	SharedSecret    []byte
+	VerTokenLen     int
+	VerToken        []byte
+}
+
+type LoginSuccess struct {
+	UUID     uuid.UUID
+	Username string
 }
 
 type LegacyServerListPing struct {

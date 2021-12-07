@@ -41,6 +41,7 @@ type Config struct {
 	KubeConfig           string   `usage:"The path to a kubernetes configuration file"`
 	MetricsBackend       string   `default:"discard" usage:"Backend to use for metrics exposure/publishing: discard,expvar,influxdb"`
 	UseProxyProtocol     bool     `default:"false" usage:"Send PROXY protocol to backend servers"`
+	ForwardIp            bool     `default:"true" usage:"Forward real IPs of clients'"`
 	MetricsBackendConfig MetricsBackendConfig
 }
 
@@ -99,7 +100,7 @@ func main() {
 	if config.ConnectionRateLimit < 1 {
 		config.ConnectionRateLimit = 1
 	}
-	connector := server.NewConnector(metricsBuilder.BuildConnectorMetrics(), config.UseProxyProtocol)
+	connector := server.NewConnector(metricsBuilder.BuildConnectorMetrics(), config.UseProxyProtocol, config.ForwardIp)
 	err = connector.StartAcceptingConnections(ctx,
 		net.JoinHostPort("", strconv.Itoa(config.Port)),
 		config.ConnectionRateLimit,

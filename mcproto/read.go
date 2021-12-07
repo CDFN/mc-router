@@ -25,7 +25,6 @@ func ReadPacket(reader io.Reader, addr net.Addr, state State) (*Packet, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		if data[0] == PacketIdLegacyServerListPing {
 			return ReadLegacyServerListPing(bufReader, addr)
 		} else {
@@ -223,6 +222,24 @@ func ReadVarInt(reader io.Reader) (int, error) {
 	return 0, errors.New("VarInt is too big")
 }
 
+func WriteVarInt(i int, w io.Writer) (int64, error) {
+	var vi = make([]byte, 0, 10)
+	num := uint64(i)
+	for {
+		b := num & 0x7F
+		num >>= 7
+		if num != 0 {
+			b |= 0x80
+		}
+		vi = append(vi, byte(b))
+		if num == 0 {
+			break
+		}
+	}
+	nn, err := w.Write(vi)
+	return int64(nn), err
+}
+
 func ReadString(reader io.Reader) (string, error) {
 	length, err := ReadVarInt(reader)
 	if err != nil {
@@ -243,6 +260,16 @@ func ReadString(reader io.Reader) (string, error) {
 	}
 
 	return strBuilder.String(), nil
+}
+
+func WriteString(s string, w io.Writer) (int64, error) {
+	byteStr := []byte(s)
+	n1, err := WriteVarInt(len(byteStr), w)
+	if err != nil {
+		return n1, err
+	}
+	n2, err := w.Write(byteStr)
+	return n1 + int64(n2), err
 }
 
 func ReadByte(reader io.Reader) (byte, error) {
@@ -271,6 +298,28 @@ func ReadUnsignedInt(reader io.Reader) (uint32, error) {
 		return 0, err
 	}
 	return value, nil
+}
+
+func ReadByteArray(reader io.Reader) ([]byte, error) {
+	n1, err := ReadVarInt(reader)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(make([]byte, n1))
+	_, err = io.CopyN(buf, reader, int64(n1))
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func WriteByteArray(bytes []byte, w io.Writer) (n int64, err error) {
+	n1, err := WriteVarInt(len(bytes), w)
+	if err != nil {
+		return n1, err
+	}
+	n2, err := w.Write(bytes)
+	return n1 + int64(n2), err
 }
 
 func ReadHandshake(data interface{}) (*Handshake, error) {
@@ -305,4 +354,52 @@ func ReadHandshake(data interface{}) (*Handshake, error) {
 	}
 	handshake.NextState = nextState
 	return handshake, nil
+}
+
+func ReadLoginStart(data interface{}) (*LoginStart, error) {
+	dataBytes, ok := data.([]byte)
+	if !ok {
+		return nil, errors.New("data is not expected byte slice")
+	}
+
+	loginStart := &LoginStart{}
+	buffer := bytes.NewBuffer(dataBytes)
+	var err error
+
+	loginStart.Name, err = ReadString(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	return loginStart, err
+}
+
+func WriteEncryptionRequest(request *EncryptionRequest, w io.Writer) error {
+	var err error
+	_, err = WriteString(string(make([]byte, 20)), w)
+	if err != nil {
+		return err
+	}
+
+	_, err = WriteVarInt(request.PubKeyLen, w)
+	if err != nil {
+		return err
+	}
+
+	_, err = WriteByteArray(request.PubKey, w)
+	if err != nil {
+		return err
+	}
+
+	_, err = WriteVarInt(request.VerTokenLen, w)
+	if err != nil {
+		return err
+	}
+
+	_, err = WriteByteArray(request.VerToken, w)
+	if err != nil {
+		return err
+	}
+
+	return err
 }
