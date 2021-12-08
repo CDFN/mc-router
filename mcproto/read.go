@@ -291,6 +291,11 @@ func ReadUnsignedShort(reader io.Reader) (uint16, error) {
 	return value, nil
 }
 
+func WriteUnsignedShort(i uint16, w io.Writer) error {
+	err := binary.Write(w, binary.BigEndian, i)
+	return err
+}
+
 func ReadUnsignedInt(reader io.Reader) (uint32, error) {
 	var value uint32
 	err := binary.Read(reader, binary.BigEndian, &value)
@@ -401,5 +406,39 @@ func WriteEncryptionRequest(request *EncryptionRequest, w io.Writer) error {
 		return err
 	}
 
+	return err
+}
+
+func WriteLoginSuccess(success *LoginSuccess, w io.Writer) error {
+	var err error
+	_, err = w.Write(success.UUID[:])
+	if err != nil {
+		return err
+	}
+	_, err = WriteString(success.Username, w)
+	if err != nil {
+		return err
+	}
+	return err
+}
+
+func WriteHandShake(handshake *Handshake, w io.Writer) error {
+	var err error
+	_, err = WriteVarInt(handshake.ProtocolVersion, w)
+	if err != nil {
+		return err
+	}
+	_, err = WriteString(handshake.ServerAddress, w)
+	if err != nil {
+		return err
+	}
+	err = WriteUnsignedShort(uint16(handshake.ServerPort), w)
+	if err != nil {
+		return err
+	}
+	_, err = WriteVarInt(handshake.NextState, w)
+	if err != nil {
+		return err
+	}
 	return err
 }

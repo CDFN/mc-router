@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/go-kit/kit/metrics"
+	"github.com/google/uuid"
 	"github.com/itzg/mc-router/mcproto"
 	"github.com/juju/ratelimit"
 	"github.com/pires/go-proxyproto"
@@ -160,6 +161,19 @@ func (c *connectorImpl) HandleConnection(ctx context.Context, frontendConn net.C
 				WithField("client", clientAddr).
 				WithField("loginStart", loginStart).
 				Debug("Got login start")
+			//todo onlinemode + encryption
+			c.state = mcproto.StateFinished
+			err = mcproto.WriteLoginSuccess(&mcproto.LoginSuccess{
+				UUID:     uuid.New(),
+				Username: "CDFN",
+			}, frontendConn)
+			if err != nil {
+				logrus.
+					WithError(err).
+					WithField("clientAddr", clientAddr).
+					Error("Failed to write login success (onlinemode=false)")
+				return
+			}
 			return
 		}
 
@@ -257,14 +271,18 @@ func (c *connectorImpl) findAndConnectBackend(ctx context.Context, frontendConn 
 		}
 	}
 
-	amount, err := io.Copy(backendConn, preReadContent)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to write handshake to backend connection")
-		c.metrics.Errors.With("type", "backend_failed").Add(1)
-		return
-	}
+	//amount, err := io.Copy(backendConn, preReadContent)
+	//if err != nil {
+	//	logrus.WithError(err).Error("Failed to write handshake to backend connection")
+	//	c.metrics.Errors.With("type", "backend_failed").Add(1)
+	//	return
+	//}
+	err = mcproto.WriteHandShake(&c.originalHandshake, backendConn)
 
-	logrus.WithField("amount", amount).Debug("Relayed handshake to backend")
+	logrus.
+		WithField("client", clientAddr).
+		WithField("state", c.state).
+		Debug("Written handshake to backend")
 	if err = frontendConn.SetReadDeadline(noDeadline); err != nil {
 		logrus.
 			WithError(err).

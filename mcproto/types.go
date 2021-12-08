@@ -15,6 +15,8 @@ type State int
 const (
 	StateHandshaking = iota
 	StateLogin       = iota
+	StateEncryption  = iota
+	StateFinished    = iota
 )
 
 var trimLimit = 64
